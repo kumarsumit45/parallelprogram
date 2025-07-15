@@ -1,0 +1,80 @@
+Question 7: Parallel Linear Search using Broadcast
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+
+int main(int argc, char** argv) {
+    int rank, size;
+    int n = 10;  // Array size
+    int target = 5;  // Target value to search
+    int *array = NULL;
+    int *local_array;
+    int local_size;
+    int found = 0;
+    int global_found = 0;
+    int found_index = -1;
+    
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    
+    // Calculate local array size
+    local_size = n / size;
+    local_array = (int*)malloc(local_size * sizeof(int));
+    
+    // Master process initializes the array
+    if (rank == 0) {
+        array = (int*)malloc(n * sizeof(int));
+        // Initialize array with values 0 to n-1
+        for (int i = 0; i < n; i++) {
+            array[i] = i+1;
+        }
+        printf("\nArray Elements :\n");
+        for(int i=0;i<n;i++){
+            printf("%d\t",array[i]);
+        }
+        printf("\nMaster: Searching for %d in array of size %d\n", target, n);
+    }
+    
+    // Broadcast target value to all processes
+    MPI_Bcast(&target, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    
+    // Scatter array chunks to all processes
+    MPI_Scatter(array, local_size, MPI_INT, local_array, local_size, MPI_INT, 0, MPI_COMM_WORLD);
+    
+    // Each process searches its local chunk
+    for (int i = 0; i < local_size; i++) {
+        if (local_array[i] == target) {
+            found = 1;
+            found_index = rank * local_size + i;  // Global index
+            break;
+        }
+    }
+    
+    // Reduce to check if any process found the target
+    MPI_Reduce(&found, &global_found, 1, MPI_INT, MPI_MAX, 0, MPI_COMM_WORLD);
+    
+    // If found, gather the index from the process that found it
+    if (found) {
+        printf("Process %d found target %d at global index %d\n", rank, target, found_index);
+    }
+    
+    // Master prints final result
+    if (rank == 0) {
+        if (global_found) {
+            printf("Target %d found in the array!\n", target);
+        } else {
+            printf("Target %d not found in the array.\n", target);
+        }
+    }
+    
+    // Cleanup
+    if (rank == 0) {
+        free(array);
+    }
+    free(local_array);
+    
+    MPI_Finalize();
+    return 0;
+}

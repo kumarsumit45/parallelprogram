@@ -1,0 +1,106 @@
+Question 8: Parallel Linear Search using Scatter
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+
+typedef struct {
+    int found;
+    int index;
+} SearchResult;
+
+int main(int argc, char** argv) {
+    int rank, size;
+    int n = 100;  // Array size
+    int target = 75;  // Target value to search
+    int *array = NULL;
+    int *local_array;
+    int local_size;
+    SearchResult local_result = {0, -1};
+    SearchResult *all_results = NULL;
+    
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    
+    // Calculate local array size
+    local_size = n / size;
+    local_array = (int*)malloc(local_size * sizeof(int));
+    
+    // Master process initializes the array
+    if (rank == 0) {
+        array = (int*)malloc(n * sizeof(int));
+        all_results = (SearchResult*)malloc(size * sizeof(SearchResult));
+        
+        // Initialize array with values 0 to n-1
+        for (int i = 0; i < n; i++) {
+            array[i] = i;
+        }
+        printf("\nArray Elements :\n");
+        for(int i=0;i<n;i++){
+            printf("%d\t",array[i]);
+        }
+        printf("\nMaster: Searching for %d in array of size %d using %d processes\n", 
+               target, n, size);
+    }
+    
+    // Broadcast target value to all processes
+    MPI_Bcast(&target, 1, MPI_INT, 0, MPI_COMM_WORLD);
+    
+    // Scatter array chunks to all processes
+    MPI_Scatter(array, local_size, MPI_INT, local_array, local_size, MPI_INT, 0, MPI_COMM_WORLD);
+    
+    // Each process performs linear search on its chunk
+    printf("Process %d searching range [%d-%d]\n", rank, 
+           rank * local_size, (rank + 1) * local_size - 1);
+    
+    for (int i = 0; i < local_size; i++) {
+        if (local_array[i] == target) {
+            local_result.found = 1;
+            local_result.index = rank * local_size + i;  // Global index
+            printf("Process %d found target %d at local index %d (global index %d)\n", 
+                   rank, target, i, local_result.index);
+            break;
+        }
+    }
+    
+    // Create MPI datatype for SearchResult
+    MPI_Datatype mpi_search_result;
+    MPI_Type_contiguous(2, MPI_INT, &mpi_search_result);
+    MPI_Type_commit(&mpi_search_result);
+    
+    // Gather all results to master
+    MPI_Gather(&local_result, 1, mpi_search_result, all_results, 1, mpi_search_result, 0, MPI_COMM_WORLD);
+    
+    // Master process analyzes results
+    if (rank == 0) {
+        int found_globally = 0;
+        int global_index = -1;
+        
+        for (int i = 0; i < size; i++) {
+            if (all_results[i].found) {
+                found_globally = 1;
+                global_index = all_results[i].index;
+                printf("Result: Process %d found target at global index %d\n", i, global_index);
+                break;  // First occurrence
+            }
+        }
+        
+        if (found_globally) {
+            printf("SUCCESS: Target %d found at index %d\n", target, global_index);
+        } else {
+            printf("FAILURE: Target %d not found in the array\n", target);
+        }
+    }
+    
+    // Cleanup
+    if (rank == 0) {
+        free(array);
+        free(all_results);
+    }
+    free(local_array);
+    MPI_Type_free(&mpi_search_result);
+    
+    MPI_Finalize();
+    return 0;
+}

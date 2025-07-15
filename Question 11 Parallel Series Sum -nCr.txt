@@ -1,0 +1,53 @@
+Question 11: Parallel Series Sum - nC1 + nC2 + nC3 + ... + nCn
+
+
+    long long total_sum = 0;
+    
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    
+    // Calculate range for each process (r values from 1 to n)
+    int terms_per_process = n / size;
+    local_start = rank * terms_per_process + 1;
+    local_end = (rank == size - 1) ? n : (rank + 1) * terms_per_process;
+    
+    printf("Process %d: Computing nCr for r = %d to %d\n", rank, local_start, local_end);
+    
+    // Calculate local sum
+    for (int r = local_start; r <= local_end; r++) {
+        long long ncr = calculate_nCr(n, r);
+        local_sum += ncr;
+        printf("Process %d: %dC%d = %lld\n", rank, n, r, ncr);
+    }
+    
+    printf("Process %d: Local sum = %lld\n", rank, local_sum);
+    
+    // Reduce all partial sums
+    MPI_Reduce(&local_sum, &total_sum, 1, MPI_LONG_LONG, MPI_SUM, 0, MPI_COMM_WORLD);
+    
+    // Master process reports results
+    if (rank == 0) {
+        printf("\n=== RESULTS ===\n");
+        printf("Series: %dC1 + %dC2 + %dC3 + ... + %dC%d\n", n, n, n, n, n);
+        printf("Total sum = %lld\n", total_sum);
+        
+        // Verification: The sum nC1 + nC2 + ... + nCn = 2^n - 1
+        long long expected = (1LL << n) - 1;  // 2^n - 1
+        printf("Expected result (2^%d - 1) = %lld\n", n, expected);
+        printf("Verification: %s\n", (total_sum == expected) ? "✓ CORRECT" : "✗ INCORRECT");
+        
+        // Also show the complete expansion
+        printf("\nComplete expansion:\n");
+        long long verification_sum = 0;
+        for (int r = 1; r <= n; r++) {
+            long long ncr = calculate_nCr(n, r);
+            verification_sum += ncr;
+            printf("%dC%d = %lld\n", n, r, ncr);
+        }
+        printf("Sequential verification sum = %lld\n", verification_sum);
+    }
+    
+    MPI_Finalize();
+    return 0;
+}

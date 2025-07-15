@@ -1,0 +1,109 @@
+Question 9: Parallel Matrix Addition
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <mpi.h>
+
+void print_matrix(int *matrix, int rows, int cols, char *name) {
+    printf("Matrix %s:\n", name);
+    for (int i = 0; i < rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            printf("%3d ", matrix[i * cols + j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+int main(int argc, char** argv) {
+    int rank, size;
+    int rows = 4, cols = 4;  // Matrix dimensions
+    int *matrixA = NULL, *matrixB = NULL, *matrixC = NULL;
+    int *local_A, *local_B, *local_C;
+    int local_rows;
+    
+    MPI_Init(&argc, &argv);
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &size);
+    
+    // Calculate rows per process
+    local_rows = rows / size;
+    
+    // Allocate local arrays
+    local_A = (int*)malloc(local_rows * cols * sizeof(int));
+    local_B = (int*)malloc(local_rows * cols * sizeof(int));
+    local_C = (int*)malloc(local_rows * cols * sizeof(int));
+    
+    // Master process initializes matrices
+    if (rank == 0) {
+        matrixA = (int*)malloc(rows * cols * sizeof(int));
+        matrixB = (int*)malloc(rows * cols * sizeof(int));
+        matrixC = (int*)malloc(rows * cols * sizeof(int));
+        
+        // Initialize matrix A
+        printf("Initializing matrices A and B (%dx%d)\n", rows, cols);
+        for (int i = 0; i < rows; i++) {
+            for (int j = 0; j < cols; j++) {
+                matrixA[i * cols + j] = i * cols + j + 1;  // Values 1,2,3...
+                matrixB[i * cols + j] = (i * cols + j) * 2;  // Values 0,2,4...
+            }
+        }
+        
+        // Print original matrices (for small matrices)
+        if (rows <= 4) {
+            print_matrix(matrixA, rows, cols, "A");
+            print_matrix(matrixB, rows, cols, "B");
+        }
+    }
+    
+    // Scatter matrix rows to all processes
+    MPI_Scatter(matrixA, local_rows * cols, MPI_INT, local_A, local_rows * cols, MPI_INT, 0, MPI_COMM_WORLD);
+    MPI_Scatter(matrixB, local_rows * cols, MPI_INT, local_B, local_rows * cols, MPI_INT, 0, MPI_COMM_WORLD);
+    
+    // Each process performs matrix addition on its rows
+    printf("Process %d: Adding rows %d to %d\n", rank, rank * local_rows, (rank + 1) * local_rows - 1);
+    
+    for (int i = 0; i < local_rows; i++) {
+        for (int j = 0; j < cols; j++) {
+            local_C[i * cols + j] = local_A[i * cols + j] + local_B[i * cols + j];
+        }
+    }
+    
+    // Gather results back to master
+    MPI_Gather(local_C, local_rows * cols, MPI_INT, matrixC, local_rows * cols, MPI_INT, 0, MPI_COMM_WORLD);
+    
+    // Master prints result
+    if (rank == 0) {
+        printf("Matrix addition completed successfully!\n");
+        
+        // Print result matrix (for small matrices)
+        if (rows <= 4) {
+            print_matrix(matrixC, rows, cols, "C (A + B)");
+        }
+        
+        // Verify correctness for a few elements
+        printf("Verification (first few elements):\n");
+        for (int i = 0; i < (rows < 3 ? rows : 3); i++) {
+            for (int j = 0; j < (cols < 3 ? cols : 3); j++) {
+                int expected = (i * cols + j + 1) + ((i * cols + j) * 2);
+                int actual = matrixC[i * cols + j];
+                printf("C[%d][%d] = %d (expected %d) %s\n", 
+                       i, j, actual, expected, (actual == expected) ? "✓" : "✗");
+            }
+        }
+    }
+    
+    // Cleanup
+    if (rank == 0) {
+        free(matrixA);
+        free(matrixB);
+        free(matrixC);
+    }
+    free(local_A);
+    free(local_B);
+    free(local_C);
+    
+    MPI_Finalize();
+    return 0;
+}
